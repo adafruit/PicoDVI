@@ -52,6 +52,11 @@ struct dvi_inst {
 
 };
 
+#if defined(__cplusplus)
+extern "C"
+{
+#endif
+
 // Set up data structures and hardware for DVI.
 void dvi_init(struct dvi_inst *inst, uint spinlock_tmds_queue, uint spinlock_colour_queue);
 
@@ -73,7 +78,7 @@ void dvi_scanbuf_main_16bpp(struct dvi_inst *inst);
 void dvi_framebuf_main_8bpp(struct dvi_inst *inst);
 void dvi_framebuf_main_16bpp(struct dvi_inst *inst);
 
-#ifdef __cplusplus
+#if defined(__cplusplus)
 }
 #endif
 
