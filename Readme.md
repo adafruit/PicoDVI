@@ -1,6 +1,42 @@
 Special Fork of PicoDVI for RP2040/RP2350 Arduino Philhower Core + Adafruit_GFX
 ========================================================================
 
+At the moment this implements a 16-bit color framebuffer to which Adafruit_GFX
+drawing operations can be made. Other framebuffer types (8-bit, 1-bit) might
+get added later, but not every permutation PicoDVI is capable of.
+
+Requires Earle Philhower III RP2040 Arduino core (not the "official" Arduino
+RP2040 core). Oddly, some resolutions may require slightly higher over-voltage
+settings vs. equivalent Pico SDK-built projects. Just speculating there might
+be a slightly higher workload when built in Arduino environment, due to
+timekeeping interrupts, Serial and any other background stuff.
+
+Changes vs main PicoDVI repo:
+- Add 'library.properties' and 'src', 'examples' directories per Arduino
+requirements.
+- software/libdvi is soft-linked into src so Arduino IDE can compile these
+parts.
+- The file dvi_serialiser.pio.h, normally not part of the distribution and
+generated during the Pico SDK cmake/make process, is provided here for
+Arduino build to work. If any changes are made in dvi_serialiser.pio (either
+here or by bringing in updates from upstream code), this header will need to
+be regenerated.
+
+All files from the PicoDVI repo are kept even if not used in this build
+(e.g. 'apps' directory), in case maintainer wants to merge this or something
+like it for both Pico SDK and Arduino IDE use from a single repo.
+
+Roadmap:
+- Other GFX-compatible framebuffer depths & sizes.
+- Might split out the PicoDVI-to-Arduino wrapper elements from the GFX parts
+so lower-level access (scanline callbacks, etc.) can be done in Arduino, to
+handle any other display permutations and perhaps port over some of PicoDVI's
+Pico SDK examples (more soft-links, e.g. libsprite, might be needed).
+
+Bitbanged DVI on the RP2040 Microcontroller
+===========================================
+
+
 ![](img/mountains.jpg)
 
 *640x480 RGB565 image, 640x480p 60 Hz DVI mode. 264 kB SRAM, 2x Cortex-M0+, system clock 252 MHz*
