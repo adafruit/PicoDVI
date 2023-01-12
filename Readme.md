@@ -1,4 +1,3 @@
-
 Special Fork of PicoDVI for RP2040/RP2350 Arduino Philhower Core + Adafruit_GFX
 ========================================================================
 
