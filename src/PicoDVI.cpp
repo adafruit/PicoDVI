@@ -4,8 +4,8 @@
 // PicoDVI class encapsulates some of the libdvi functionality -------------
 // Subclasses then implement specific display types.
 
-static PicoDVI *dviptr = NULL; // For C access to active C++ object
-static volatile bool wait_begin = true;
+PicoDVI *dviptr = NULL; // For C access to active C++ object
+volatile bool wait_begin = true;
 
 // Runs on core 1 on startup
 void setup1(void) {
