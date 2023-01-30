@@ -7,20 +7,25 @@
 
 //
 // PicoDVI8 is a framebuffer that automatically builds the color palette 
-// based on the colors in the calls to the GFXcanvas8.   Only 
-// one instance of this class should be create at one one time, 
-// since the scanBufferMain runs continuiosly on core1.  The color palette 
+// based on the colors in the calls to the GFXcanvas8. The color palette 
 // will be reset when the fillScreen method is called.
 //
-// The frame buffer width/height can be set to 1/2 the monitor timing.
+// Only one instance of this class should be create, since the libdvi code
+// does not have a way de/reinitialize.
+//
+// The frame buffer width/height can be set to 1/2 the display timing.
 // So for 640x480, the max w is 320 and the max h is 240.  You can also
 // set the w or h lower than 1/2 and it will pad out the right/bottom 
-// with black lines. 
+// with black pixes/lines. 
 //
 // If you want to use the full vertical resolution, you can set repeate to
 // 1.   This will then use an interlaced scan line model (see comments 
 // below for scanBufferMain for more info).  This works fine for lcd monitors,
 // but did not look good on usb capture dongles.
+// 
+// If  you do use the interlaced mode, the h must be equal to the vertical scan
+// lines.   Otherwize you overflow the free tmds list (queue is only 8 lines deep)
+// and the libdvi code panics.
 //
 class PicoDVI8 : public PicoDVI, public GFXcanvas8 {
 public:
@@ -38,29 +43,30 @@ public:
   //
   // Generate the scanlines from the GFXcanvas8 framebuffer
   // This happens on the second core.  This is done a bit
-  // differently for performance reasons.   
+  // differently for performance reasons from the DVIGFX16 
+  // class.   
   //
   // The pixel clock is run at 10 clock cycles per pixes.
   // So for 640x480 the system clock is set to 252mhz, which
   // gives 8750 clock cycles (252,000,000 / 480 / 60 fps) to
-  // generate the scan line.   The default method in 
+  // generate each scan line.   The default method in 
   // dvi_scanbuf_main_16bpp takes about 28,000 clock cycles to 
   // convert the scanline to tmds.  So it can barley keep up with
   // generating every other scan line (hence the red lines
-  // displaying randomly).
+  // displaying randomly in the DVIGFX8 implementation).
   //
-  // So this version of the scanBufferMain, converts the 
+  // So this version of the scanBufferMain converts the 
   // color palette entries into the tmds 10 bit values 
   // and builds the scan line buffer directly.   This takes about
   // 16000 clock cycles, so you can do 240 scan lines per second
   // with no red lines.
   //
-  // One of the reason to use a color pallet was to save ram, but
+  // One of the reason to use a color pallet is to save ram, but
   // it would be nice to be able to be able to get a full 480 scan 
   // lines.   To acheve this, it uses an interlacing pattern.  So for 
-  // one frame only the even scan lines are generated and a black line
-  // is sent for the odd scan lines.   Then the next frame the odd scan
-  // lines are sent with blak even lines.   This works find on LCD monitors
+  // one frame, only the even scan lines are generated and a black line
+  // is sent for the odd scan lines.   Then in the next frame the odd scan
+  // lines are sent with black even lines.   This works find on LCD monitors
   // and looks like the old interlaced monitors (not as bright or crisp as
   // non-interlaced).  This doesn't seem to work for usb capture dongles 
   // (just looks like garbage on mine).  So try it, and if it works for you 
@@ -78,6 +84,10 @@ public:
   void fillScreen(uint16_t color);
   void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color);
   void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
+
+  uint16_t getPixel(int16_t x, int16_t y) const;
+  virtual void invertDisplay(bool i);
+
 
   //
   // Pallet functions.   They should not need to be called as they are automatically
@@ -107,6 +117,8 @@ public:
 
 
 protected:
+
+  bool     inverted;
 
   uint16_t palette[PICODVI8_MAX_COLORS];
 

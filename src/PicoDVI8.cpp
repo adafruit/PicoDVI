@@ -18,6 +18,15 @@ const uint32_t tmds_table[] = {
 #include "libdvi/tmds_table.h"
 };
 
+//
+// allow us to change instances of the PicoDVI8 class
+//
+void loop1(void) {
+  while (wait_begin)
+    ; // Wait for DVIGFX*::begin() to do its thing on core 0
+  dviptr->_setup();
+}
+
 PicoDVI8 * PicoDVI8::instance = NULL;
 
 PicoDVI8::PicoDVI8(const uint16_t w, const uint16_t h,
@@ -65,15 +74,16 @@ PicoDVI8:: ~PicoDVI8(void) {
   }
   blankLine = NULL;
 
-  exitMainLoop = false;
+  // reset core 1 wait flag for the PicoDVI baseclass
+  // This is kinda a moot point, as the libdvi code
+  // can't be restarted at this point.   But if that changes
+  // in the future, this might work...
+  wait_begin = true; 
+
+  exitMainLoop = true;
 
   // give it some time to exit 
   delay(10);
-
-  // reset core 1 wait flag for the PicoDVI baseclass
-  wait_begin = true; 
-
-  rp2040.restartCore1();
 
 } 
 
@@ -190,6 +200,8 @@ bool PicoDVI8::begin(void) {
 }
 
 void     PicoDVI8::resetPalette() {
+
+   inverted = false;
  
    paletteIdx = 0; 
    addColor(BLACK);
@@ -226,6 +238,10 @@ uint8_t  PicoDVI8::getColorIdx(uint16_t color) {
 }
 
 void PicoDVI8::setTMDS(uint8_t idx,uint16_t color) {
+
+  if (inverted) {
+     color = ~color;
+  }
 
   rtmds[idx] = tmds_table[(color & 0b1111100000000000) >> 10] ;
   gtmds[idx] = tmds_table[(color & 0b0000011111100000) >>  5] ;
@@ -286,5 +302,19 @@ void PicoDVI8::drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) {
    GFXcanvas8::drawFastHLine(x,y,w,getColorIdx(color));
 }
 
+uint16_t PicoDVI8::getPixel(int16_t x, int16_t y) const {
+   if ((x < WIDTH) && (y < HEIGHT)) {
+       return (palette[getBuffer()[y*WIDTH + x]]);
+   }
+   return (0);
+}
 
-
+void PicoDVI8::invertDisplay(bool i) {
+   if (i != inverted) {
+     inverted = i;
+     for (int i = 0; i < paletteIdx; i++) {
+        // rebuild he TMDS palette
+        setTMDS(i,palette[i]);
+     }
+   }
+}
