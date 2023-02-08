@@ -3,11 +3,11 @@
 #include <PicoDVI8.h>
 
 // Create an non-interlaced 320x240 instance
-PicoDVI8 tft = PicoDVI8(320, 480, dvi_timing_640x480p_60hz, VREG_VOLTAGE_1_10, pimoroni_demo_hdmi_cfg, 2);
+PicoDVI8 tft = PicoDVI8(320, 240, dvi_timing_640x480p_60hz, VREG_VOLTAGE_1_10, pimoroni_demo_hdmi_cfg, 2);
 // Create an interlaced 320x480 instance
 //PicoDVI8 tft = PicoDVI8(320, 480, dvi_timing_640x480p_60hz, VREG_VOLTAGE_1_10, pimoroni_demo_hdmi_cfg, 1);
 // Create an non-interlaced 400x240 instance
-//PicoDVI8 tft = PicoDVI8(400, 480, dvi_timing_800x480p_60hz, VREG_VOLTAGE_1_25, pimoroni_demo_hdmi_cfg, 2);
+//PicoDVI8 tft = PicoDVI8(400, 240, dvi_timing_800x480p_60hz, VREG_VOLTAGE_1_25, pimoroni_demo_hdmi_cfg, 2);
 // Create an interlaced 400x480 instance
 //PicoDVI8 tft = PicoDVI8(400, 480, dvi_timing_800x480p_60hz, VREG_VOLTAGE_1_25, pimoroni_demo_hdmi_cfg, 1);
 
