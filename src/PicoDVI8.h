@@ -43,7 +43,7 @@ public:
   //
   // Generate the scanlines from the GFXcanvas8 framebuffer
   // This happens on the second core.  This is done a bit
-  // differently for performance reasons from the DVIGFX16 
+  // differently for performance reasons from the DVIGFX8 
   // class.   
   //
   // The pixel clock is run at 10 clock cycles per pixes.
