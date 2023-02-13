@@ -34,7 +34,7 @@ PicoDVI8::PicoDVI8(const uint16_t w, const uint16_t h,
           vreg_voltage v,
           const struct dvi_serialiser_cfg &c,
           uint8_t repeate) :
-       PicoDVI(t, v, c), 
+       PicoDVI(t, c, v), 
        GFXcanvas8(MIN(w,t.h_active_pixels / DVI_SYMBOLS_PER_WORD), 
                   MIN(h,t.v_active_lines / repeate)) {
 
