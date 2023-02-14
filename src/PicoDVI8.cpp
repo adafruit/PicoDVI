@@ -21,7 +21,7 @@ const uint32_t tmds_table[] = {
 // allow us to change instances of the PicoDVI8 class
 //
 void loop1(void) {
-  while (wait_begin)
+  while (dviptr == NULL)
     ; // Wait for DVIGFX*::begin() to do its thing on core 0
   dviptr->_setup();
 }
