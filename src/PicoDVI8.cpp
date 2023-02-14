@@ -5,6 +5,7 @@
 // Needed access to be called from setup1() on core1
 // 
 extern PicoDVI *dviptr;
+extern volatile bool wait_begin;
 
 #ifndef MIN
 #define MIN(a,b)    (((a) < (b)) ? a : b)
