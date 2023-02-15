@@ -28,11 +28,8 @@ volatile bool wait_begin = true;
 
 // Runs on core 1 on startup
 void setup1(void) {
-  while (wait_begin)
-    ; // Wait for DVIGFX*::begin() to set this
-  delay(1); // Required, perhaps core related
-  while (dviptr == NULL)
-    ; // Wait for DVIGFX*::begin() to start on core 0
+  while (dviptr == NULL) // Wait for PicoDVI::begin() to start on core 0
+    yield();
   dviptr->_setup();
 }
 
@@ -359,7 +356,7 @@ size_t DVIterm1::write(uint8_t c) {
     cursor_x = 0;
   } else if ((c == '\n') || (cursor_x >= WIDTH)) { // Newline OR right edge
     cursor_x = 0;
-    if (cursor_y >= HEIGHT) { // Vert scroll?
+    if (cursor_y >= (HEIGHT - 1)) { // Vert scroll?
       memmove(getBuffer(), getBuffer() + WIDTH, WIDTH * (HEIGHT - 1) * 2);
       drawFastHLine(0, HEIGHT - 1, WIDTH, ' '); // Clear bottom line
       cursor_y = HEIGHT - 1;
