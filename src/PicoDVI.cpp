@@ -23,8 +23,7 @@ static struct {
     {dvi_timing_1280x720p_30hz, VREG_VOLTAGE_1_30, 1280, 720, 1},
 };
 
-PicoDVI *dviptr = NULL; // For C access to active C++ object
-volatile bool wait_begin = true;
+static PicoDVI *dviptr = NULL; // For C access to active C++ object
 
 // Runs on core 1 on startup
 void setup1(void) {
@@ -35,6 +34,8 @@ void setup1(void) {
 
 // Runs on core 1 after dviptr set
 void PicoDVI::_setup(void) {
+  while (wait_begin)
+    ; // Wait for DVIGFX*::begin() to set this
   dvi_register_irqs_this_core(&dvi0, DMA_IRQ_0);
   dvi_start(&dvi0);
   (*mainloop)(&dvi0);
