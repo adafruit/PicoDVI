@@ -1,12 +1,6 @@
 #include "PicoDVI8.h"
 #include "libdvi/tmds_encode.h"
 
-//
-// Needed access to be called from setup1() on core1
-// 
-extern PicoDVI *dviptr;
-extern volatile bool wait_begin;
-
 #ifndef MIN
 #define MIN(a,b)    (((a) < (b)) ? a : b)
 #endif
@@ -17,15 +11,6 @@ extern volatile bool wait_begin;
 const uint32_t tmds_table[] = {
 #include "libdvi/tmds_table.h"
 };
-
-//
-// allow us to change instances of the PicoDVI8 class
-//
-void loop1(void) {
-  while (dviptr == NULL)
-    ; // Wait for DVIGFX*::begin() to do its thing on core 0
-  dviptr->_setup();
-}
 
 PicoDVI8 * PicoDVI8::instance = NULL;
 
@@ -184,8 +169,6 @@ void __not_in_flash_func(PicoDVI8::scanBufferMain)(struct dvi_inst *inst) {
 }
 
 bool PicoDVI8::begin(void) {
-
-  dviptr = this;
 
   resetPalette();
 
