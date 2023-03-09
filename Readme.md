@@ -2,21 +2,24 @@ PicoDVI - Adafruit Fork for Arduino IDE + Adafruit_GFX compatibility
 ====================================================================
 (Original Readme content follows later)
 
-At present this implements a 16-bit color framebuffer to which Adafruit_GFX
-drawing operations can be made. Other framebuffer types (8-bit, 1-bit) might
-get added later, but probably not every permutation PicoDVI is capable of.
+Implements a few framebuffer types to which Adafruit_GFX drawing operations
+can be made; not every permutation PicoDVI is capable of, but a useful subset.
+
+WARNING: all video modes require overclocking (performed automatically at
+run-time, nothing to select), occasionally over-volting (optionally selected
+in sketch code), and higher resolutions may require reducing the QSPI clock
+rate (Tools menu in future arduino-pico release). The RP2040 microcontroller
+is being run WAY beyond spec and there is a VERY SMALL BUT NONZERO
+POSSIBILITY OF PERMANENT DAMAGE. Please see LICENSE file; usual software
+disclaimers about liability apply, user accepts risk.
 
 Requires Earle Philhower III RP2040 Arduino core (not the "official" Arduino
-RP2040 core). Some resolutions may require slightly higher over-voltage
-settings vs. equivalent Pico SDK-built projects. Just speculating there might
-be a slightly higher workload when built in Arduino environment, due to
-timekeeping interrupts, Serial and any other background stuff.
+RP2040 core).
 
 Changes vs main PicoDVI repo:
 - Add library.properties file, src and examples directories per Arduino
 requirements.
-- software/libdvi is soft-linked into src so Arduino IDE can compile these
-parts.
+- A full copy of software/libdvi is made in src (originally was soft-linked but Arduino Library Manager does not approve). If any updates are made in the original PicoDVI libdvi directory, copy them here!
 - The file dvi_serialiser.pio.h, normally not part of the distribution and
 generated during the Pico SDK build process, is provided here for Arduino
 build to work. If any changes are made in dvi_serialiser.pio (either here
@@ -29,6 +32,7 @@ called: dvi_vertical_repeat and dvi_monochrome_tmds.
 - DVI_1BPP_BIT_REVERSE is switched '1' by default (to work with bit order
 used by GFXcanvas1 object). Pico SDK-built examples using 1-bit mode are
 fixed by changing the corresponding CMakeLists.txt files to set this to 0.
+Font data has had bit order reversed to match this layout.
 
 All files from the PicoDVI repo are kept even if not used in this build
 (e.g. apps and assets directories, among others) so same repo can still be

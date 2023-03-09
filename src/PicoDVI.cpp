@@ -1,3 +1,13 @@
+// SPDX-FileCopyrightText: 2023 P Burgess for Adafruit Industries
+//
+// SPDX-License-Identifier: BSD-3-Clause
+
+/*!
+ * @file PicoDVI.cpp
+ *
+ * Arduino-and-Adafruit-GFX wrapper around Luke Wren's PicoDVI library.
+ */
+
 #include "PicoDVI.h"
 #include "libdvi/tmds_encode.h"
 
@@ -25,7 +35,10 @@ static struct {
 
 static PicoDVI *dviptr = NULL; // For C access to active C++ object
 
-// Runs on core 1 on startup
+/*!
+  @brief  Runs on core 1 on startup; this is how Philhower RP2040 handles
+          multiprocessing.
+*/
 void setup1(void) {
   while (dviptr == NULL) // Wait for PicoDVI::begin() to start on core 0
     yield();
@@ -118,19 +131,31 @@ bool DVIGFX16::begin(void) {
 // us, but allocated by GFX as part of the framebuffer all at once. The
 // HEIGHT value is de-tweaked to the original value so clipping won't allow
 // any drawing operations to spill into the 16-bit scanlines.
+// This requires latest Adafruit_GFX as double-buffered mode plays games with
+// the canvas pointer, wasn't possible until that was made protected (vs
+// private). Drawing and palette-setting operations ONLY apply to the "back"
+// state. Call swap() to switch the front/back buffers at the next vertical
+// sync, for flicker-free and tear-free animation.
 
-DVIGFX8::DVIGFX8(const DVIresolution r, const struct dvi_serialiser_cfg &c,
-                 vreg_voltage v)
+DVIGFX8::DVIGFX8(const DVIresolution r, const bool d,
+                 const struct dvi_serialiser_cfg &c, vreg_voltage v)
     : PicoDVI(dvispec[r].timing, c, v),
-      GFXcanvas8(dvispec[r].width, ((dvispec[r].height + 1) & ~1) + 4) {
+      GFXcanvas8(
+          dvispec[r].width,
+          (d ? (dvispec[r].height * 2) : ((dvispec[r].height + 1) & ~1)) + 4),
+      dbuf(d) {
   HEIGHT = _height = dvispec[r].height;
+  buffer_save = buffer;
   dvi_vertical_repeat = dvispec[r].v_rep;
   dvi_monochrome_tmds = false;
 }
 
-DVIGFX8::~DVIGFX8(void) { gfxptr = NULL; }
+DVIGFX8::~DVIGFX8(void) {
+  buffer = buffer_save; // Restore pointer so canvas destructor works
+  gfxptr = NULL;
+}
 
-static void scanline_callback_GFX8(void) {
+static void __not_in_flash_func(scanline_callback_GFX8)(void) {
   ((DVIGFX8 *)gfxptr)->_scanline_callback();
 }
 
@@ -141,19 +166,32 @@ void __not_in_flash_func(DVIGFX8::_scanline_callback)(void) {
   b16 = row565[rowidx]; // Next row to send
   queue_add_blocking_u32(&dvi0.q_colour_valid, &b16); // Send it
 
-  scanline = (scanline + 1) % HEIGHT;           // Next scanline
-  uint8_t *b8 = &getBuffer()[WIDTH * scanline]; // New src
-  rowidx = (rowidx + 1) & 1;                    // Swap row565[] bufs
-  b16 = row565[rowidx];                         // New dest
+  if (++scanline >= HEIGHT) {      // Next scanline...end of screen reached?
+    if (swap_wait) {               // Swap buffers?
+      back_index = 1 - back_index; // Yes plz
+      buffer = buffer_save + WIDTH * HEIGHT * back_index;
+      swap_wait = 0;
+    }
+    scanline = 0;
+  }
+
+  // Refresh from front buffer
+  uint8_t *b8 = buffer_save + WIDTH * scanline; // New src
+  if (dbuf)
+    b8 += WIDTH * HEIGHT * (1 - back_index);
+  rowidx = (rowidx + 1) & 1; // Swap row565[] bufs
+  b16 = row565[rowidx];      // New dest
+  uint16_t *p16 = dbuf ? palette[1 - back_index] : palette[0];
   for (int i = 0; i < WIDTH; i++)
-    b16[i] = palette[b8[i]];
+    b16[i] = p16[b8[i]];
 }
 
 bool DVIGFX8::begin(void) {
   uint8_t *bufptr = getBuffer();
   if ((bufptr)) {
     gfxptr = this;
-    row565[0] = (uint16_t *)&bufptr[(WIDTH * HEIGHT + 1) & ~1];
+    row565[0] = (uint16_t *)&bufptr[dbuf ? WIDTH * HEIGHT * 2
+                                         : (WIDTH * HEIGHT + 1) & ~1];
     row565[1] = row565[0] + WIDTH;
     memset(palette, 0, sizeof palette);
     // mainloop = mainloop8;
@@ -172,99 +210,23 @@ bool DVIGFX8::begin(void) {
   return false;
 }
 
-// DVIGFX8x2 (8-bit, color-indexed, double-buffered for animation)
-// requires latest Adafruit_GFX as it plays games with the canvas pointer,
-// wasn't possible until that was made protected (vs private). This is very
-// similar to DVIGFX8 but effectively has two canvases and palettes ("front"
-// and "back"). Drawing and palette-setting operations ONLY apply to the
-// "back" state. Call swap() to switch the front/back buffers at the next
-// vertical sync, for flicker-free and tear-free animation.
+void DVIGFX8::swap(bool copy_framebuffer, bool copy_palette) {
+  if (dbuf) {
+    // Request buffer swap at next frame end, wait for it to happen.
+    for (swap_wait = 1; swap_wait;)
+      ;
 
-DVIGFX8x2::DVIGFX8x2(const DVIresolution r, const struct dvi_serialiser_cfg &c,
-                     vreg_voltage v)
-    : PicoDVI(dvispec[r].timing, c, v),
-      GFXcanvas8(dvispec[r].width, dvispec[r].height * 2 + 4) {
-  HEIGHT = _height = dvispec[r].height;
-  buffer_save = buffer;
-  dvi_vertical_repeat = dvispec[r].v_rep;
-  dvi_monochrome_tmds = false;
-}
-
-DVIGFX8x2::~DVIGFX8x2(void) {
-  buffer = buffer_save; // Restore pointer so canvas destructor works
-  gfxptr = NULL;
-}
-
-static void scanline_callback_GFX8x2(void) {
-  ((DVIGFX8x2 *)gfxptr)->_scanline_callback();
-}
-
-void __not_in_flash_func(DVIGFX8x2::_scanline_callback)(void) {
-  uint16_t *b16;
-  while (queue_try_remove_u32(&dvi0.q_colour_free, &b16))
-    ;                   // Discard returned pointer(s)
-  b16 = row565[rowidx]; // Next row to send
-  queue_add_blocking_u32(&dvi0.q_colour_valid, &b16); // Send it
-
-  if (++scanline >= HEIGHT) {      // Next scanline...end of screen reached?
-    if (swap_wait) {               // Swap buffers?
-      back_index = 1 - back_index; // Yes plz
-      buffer = buffer_save + WIDTH * HEIGHT * back_index;
-      swap_wait = 0;
+    if ((copy_framebuffer)) {
+      uint32_t bufsize = WIDTH * HEIGHT;
+      memcpy(buffer_save + bufsize * back_index,
+             buffer_save + bufsize * (1 - back_index), bufsize);
     }
-    scanline = 0;
-  }
-  // Refresh from front buffer
-  uint8_t *b8 = buffer_save + WIDTH * HEIGHT * (1 - back_index) +
-                WIDTH * scanline; // New src
-  rowidx = (rowidx + 1) & 1;      // Swap row565[] bufs
-  b16 = row565[rowidx];           // New dest
-  for (int i = 0; i < WIDTH; i++)
-    b16[i] = palette[1 - back_index][b8[i]];
-}
 
-bool DVIGFX8x2::begin(void) {
-  uint8_t *bufptr = getBuffer();
-  if ((bufptr)) {
-    gfxptr = this;
-    row565[0] = (uint16_t *)&bufptr[WIDTH * HEIGHT * 2];
-    row565[1] = row565[0] + WIDTH;
-    memset(palette, 0, sizeof palette);
-    // mainloop = mainloop8;
-    mainloop = dvi_scanbuf_main_16bpp; // in libdvi
-    dvi0.scanline_callback = scanline_callback_GFX8x2;
-    PicoDVI::begin();
-    bufptr += WIDTH * HEIGHT; // Initial front buffer is index 1
-    // No need to initialize the row565 buffer contents as that memory is
-    // cleared on canvas alloc, and the initial palette state is also all 0.
-    uint16_t *b16 = row565[0];
-    queue_add_blocking_u32(&dvi0.q_colour_valid, &b16);
-    b16 = row565[1];
-    queue_add_blocking_u32(&dvi0.q_colour_valid, &b16);
-    wait_begin = false; // Set core 1 in motion
-    return true;
-  }
-  return false;
-}
-
-void DVIGFX8x2::swap(bool copy_framebuffer, bool copy_palette) {
-
-  // Request buffer swap at next frame end, wait for it to happen.
-  for (swap_wait = 1; swap_wait;)
-    ;
-
-  if ((copy_framebuffer)) {
-    uint32_t bufsize = WIDTH * HEIGHT;
-    memcpy(buffer_save + bufsize * back_index,
-           buffer_save + bufsize * (1 - back_index), bufsize);
-  }
-
-  if ((copy_palette)) {
-    memcpy(palette[back_index], palette[1 - back_index], sizeof(palette[0]));
+    if ((copy_palette)) {
+      memcpy(palette[back_index], palette[1 - back_index], sizeof(palette[0]));
+    }
   }
 }
-
-// 1-bit WIP --------
 
 DVIGFX1::DVIGFX1(const DVIresolution r, const bool d,
                  const struct dvi_serialiser_cfg &c, vreg_voltage v)
@@ -335,13 +297,13 @@ void DVIGFX1::swap(bool copy_framebuffer) {
 
 // TEXT MODE IS A WORK IN PROGRESS
 
-#define FONT_CHAR_WIDTH 8
-#define FONT_CHAR_HEIGHT 8
-#define FONT_N_CHARS 256
-#define FONT_FIRST_ASCII 0
+#define FONT_CHAR_WIDTH 8  ///< Character block width, pixels
+#define FONT_CHAR_HEIGHT 8 ///< Character block height, pixels
+#define FONT_N_CHARS 256   ///< Number of symbols in font
+#define FONT_FIRST_ASCII 0 ///< Full CP437 is there, start at 0
 #include "font_8x8.h"
 
-DVIterm1::DVIterm1(const DVIresolution r, const struct dvi_serialiser_cfg &c,
+DVItext1::DVItext1(const DVIresolution r, const struct dvi_serialiser_cfg &c,
                    vreg_voltage v)
     : PicoDVI(dvispec[r].timing, c, v),
       GFXcanvas16(dvispec[r].width / 8, dvispec[r].height / 8) {
@@ -349,10 +311,10 @@ DVIterm1::DVIterm1(const DVIresolution r, const struct dvi_serialiser_cfg &c,
   dvi_monochrome_tmds = true;
 }
 
-DVIterm1::~DVIterm1(void) { gfxptr = NULL; }
+DVItext1::~DVItext1(void) { gfxptr = NULL; }
 
 // Character framebuffer is actually a small GFXcanvas16, so...
-size_t DVIterm1::write(uint8_t c) {
+size_t DVItext1::write(uint8_t c) {
   if (c == '\r') { // Carriage return
     cursor_x = 0;
   } else if ((c == '\n') || (cursor_x >= WIDTH)) { // Newline OR right edge
@@ -377,12 +339,20 @@ static uint8_t scanbuf[1280 / 8] __attribute__((aligned(4)));
 
 #ifdef TERM_USE_INTERRUPT
 
-void inline __not_in_flash_func(DVIterm1::_prepare_scanline)(uint16_t y) {
+void inline __not_in_flash_func(DVItext1::_prepare_scanline)(uint16_t y) {
   uint16_t *row = getBuffer() + (y / FONT_CHAR_HEIGHT) * WIDTH;
   uint32_t offset = (y & 7) * FONT_N_CHARS;
 
   // Blit font into 1bpp scanline buffer, then encode scanbuf into tmdsbuf
   for (uint16_t x = 0; x < WIDTH; x++) {
+    // Though this only handles 8-bit character output (e.g. ASCII), the
+    // character buffer uses 16-bit cells. The LOWER BYTE contains the 8-bit
+    // character value, while (for now) the UPPER BYTE is either 0 (display
+    // normally) or 255 (inverse). Eventually the upper byte might be
+    // switched to bitfields, e.g. bit 0 = inverse, bit 1 = blink, maybe an
+    // underscore cursor or something, etc. This is slightly wasteful, but
+    // greatly simplifies keeping character values and attributes always
+    // moving together (and the display buffer really isn't THAT big).
     uint8_t mask = row[x] >> 8;
     uint8_t c = (row[x] & 255) - FONT_FIRST_ASCII;
     scanbuf[x] = font_8x8[offset + c] ^ mask;
@@ -393,13 +363,13 @@ void inline __not_in_flash_func(DVIterm1::_prepare_scanline)(uint16_t y) {
   queue_add_blocking_u32(&dvi0.q_tmds_valid, &tmdsbuf);
 }
 
-void __not_in_flash_func(term1_scanline_callback)(void) {
+void __not_in_flash_func(text1_scanline_callback)(void) {
   static uint y = 1;
-  ((DVIterm1 *)gfxptr)->_prepare_scanline(y);
-  y = (y + 1) % (((DVIterm1 *)gfxptr)->height() * 8);
+  ((DVItext1 *)gfxptr)->_prepare_scanline(y);
+  y = (y + 1) % (((DVItext1 *)gfxptr)->height() * 8);
 }
 
-static void mainloopterm1(struct dvi_inst *inst) {
+static void mainlooptext1(struct dvi_inst *inst) {
   // Idle func, everything happens in interrupt
   for (;;)
     delay(1000);
@@ -411,17 +381,18 @@ static void mainloopterm1(struct dvi_inst *inst) {
 // This is a little simpler and might stick with it
 // since nothing important to do in idle func above.
 
-static void mainloopterm1(struct dvi_inst *inst) {
-  ((DVIterm1 *)gfxptr)->_mainloop();
+static void mainlooptext1(struct dvi_inst *inst) {
+  ((DVItext1 *)gfxptr)->_mainloop();
 }
 
-void __not_in_flash_func(DVIterm1::_mainloop)(void) {
+void __not_in_flash_func(DVItext1::_mainloop)(void) {
   for (;;) {
     for (uint16_t y = 0; y < HEIGHT; y++) {
       uint16_t *row = getBuffer() + y * WIDTH;
       for (uint8_t y1 = 0; y1 < 8; y1++) {
         uint32_t offset = y1 * FONT_N_CHARS;
         for (uint16_t x = 0; x < WIDTH; x++) {
+          // See notes above
           uint8_t mask = row[x] >> 8;
           uint8_t c = (row[x] & 255) - FONT_FIRST_ASCII;
           scanbuf[x] = font_8x8[offset + c] ^ mask;
@@ -437,14 +408,14 @@ void __not_in_flash_func(DVIterm1::_mainloop)(void) {
 
 #endif // end TERM_USE_INTERRUPT
 
-bool DVIterm1::begin(void) {
+bool DVItext1::begin(void) {
   if ((getBuffer())) {
     fillScreen(' ');
     gfxptr = this;
 #ifdef TERM_USE_INTERRUPT
-    dvi0.scanline_callback = term1_scanline_callback;
+    dvi0.scanline_callback = text1_scanline_callback;
 #endif
-    mainloop = mainloopterm1;
+    mainloop = mainlooptext1;
     PicoDVI::begin();
 
     // Must do this AFTER begin because tmdsbuf (accessed in func)
