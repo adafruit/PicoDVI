@@ -105,7 +105,7 @@ static const struct dvi_serialiser_cfg not_hdmi_featherwing_cfg = {
 
 // Adafruit Feather RP2040 DVI
 static const struct dvi_serialiser_cfg adafruit_feather_dvi_cfg = {
-	.pio = pio0,
+	.pio = DVI_DEFAULT_PIO_INST,
 	.sm_tmds = {0, 1, 2},
 	.pins_tmds = {18, 20, 22},
 	.pins_clk = 16,
