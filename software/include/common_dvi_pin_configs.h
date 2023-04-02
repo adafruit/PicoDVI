@@ -119,6 +119,13 @@ static const struct dvi_serialiser_cfg waveshare_rp2040_pizero = {
 	.pins_tmds = {26, 24, 22},
 	.pins_clk = 28,
 	.invert_diffpairs = false
+
+static const struct dvi_serialiser_cfg adafruit_dvibell_cfg = {
+  .pio = DVI_DEFAULT_PIO_INST,
+  .sm_tmds = {0, 1, 2},
+  .pins_tmds = {10, 8, 6},
+  .pins_clk = 12,
+  .invert_diffpairs = false
 };
 
 #endif
