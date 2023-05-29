@@ -453,10 +453,7 @@ bool DVItext1::begin(void) {
 void PicoDVI::_toggle(void) {
   // DVI start/stop must occur on core 1. Signal DVI main loop to toggle
   // its state (suspend or resume), block until acknowledged.
-pinMode(LED_BUILTIN, OUTPUT);
-digitalWrite(LED_BUILTIN, HIGH);
   for (dviptr->dvi0.suspendflag = true; dviptr->dvi0.suspendflag; );
-digitalWrite(LED_BUILTIN, LOW);
 }
 
 /*!
