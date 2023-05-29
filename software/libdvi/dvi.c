@@ -195,7 +195,7 @@ void __dvi_func(dvi_scanbuf_main_8bpp)(struct dvi_inst *inst) {
 			dvi_stop(inst);
 			inst->suspendflag = false;  // Ack core 0
 			while (!inst->suspendflag); // Wait for restart
-			y = 0;
+			//y = 0;
 			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
 			dvi_start(inst);
 			inst->suspendflag = false;  // Ack core 0
@@ -221,7 +221,7 @@ void __dvi_func(dvi_scanbuf_main_16bpp)(struct dvi_inst *inst) {
 			dvi_stop(inst);
 			inst->suspendflag = false;  // Ack core 0
 			while (!inst->suspendflag); // Wait for restart
-			y = 0;
+			//y = 0;
 			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
 			dvi_start(inst);
 			inst->suspendflag = false;  // Ack core 0
