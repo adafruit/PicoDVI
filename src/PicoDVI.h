@@ -65,6 +65,12 @@ public:
             C init code to access protected elements.
   */
   void _setup(void);
+  /*!
+    @brief  Internal function for DVI suspend/resume. User code should not
+            touch this, but needed for C PicoDVI_suspend() & PicoDVI_resume()
+            functions.
+  */
+  void _toggle(void);
 
 protected:
   /*!

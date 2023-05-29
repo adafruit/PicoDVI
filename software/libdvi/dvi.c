@@ -23,7 +23,7 @@ static void dvi_dma0_irq();
 static void dvi_dma1_irq();
 
 void dvi_init(struct dvi_inst *inst, uint spinlock_tmds_queue, uint spinlock_colour_queue) {
-	inst->started = false;
+	inst->started = inst->suspendflag = false;
 	dvi_timing_state_init(&inst->timing_state);
 	dvi_serialiser_init(&inst->ser_cfg);
 	for (int i = 0; i < N_TMDS_LANES; ++i) {
@@ -190,6 +190,16 @@ static inline void __dvi_func_x(_dvi_prepare_scanline_16bpp)(struct dvi_inst *in
 void __dvi_func(dvi_scanbuf_main_8bpp)(struct dvi_inst *inst) {
 	uint y = 0;
 	while (1) {
+		if (inst->suspendflag) {
+			dvi_unregister_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_stop(inst);
+			inst->suspendflag = false;  // Ack core 0
+			while (!inst->suspendflag); // Wait for restart
+			y = 0;
+			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_start(inst);
+			inst->suspendflag = false;  // Ack core 0
+		}
 		uint32_t *scanbuf = NULL;
 		queue_remove_blocking_u32(&inst->q_colour_valid, &scanbuf);
 		_dvi_prepare_scanline_8bpp(inst, scanbuf);
@@ -206,6 +216,16 @@ void __dvi_func(dvi_scanbuf_main_8bpp)(struct dvi_inst *inst) {
 void __dvi_func(dvi_scanbuf_main_16bpp)(struct dvi_inst *inst) {
 	uint y = 0;
 	while (1) {
+		if (inst->suspendflag) {
+			dvi_unregister_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_stop(inst);
+			inst->suspendflag = false;  // Ack core 0
+			while (!inst->suspendflag); // Wait for restart
+			y = 0;
+			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_start(inst);
+			inst->suspendflag = false;  // Ack core 0
+		}
 		uint32_t *scanbuf = NULL;
 		queue_remove_blocking_u32(&inst->q_colour_valid, &scanbuf);
 		_dvi_prepare_scanline_16bpp(inst, scanbuf);

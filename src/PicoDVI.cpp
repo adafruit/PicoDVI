@@ -251,6 +251,15 @@ static void mainloop1(struct dvi_inst *inst) {
 
 void __not_in_flash_func(DVIGFX1::_mainloop)(void) {
   for (;;) {
+    if (dvi0.suspendflag) {
+      dvi_unregister_irqs_this_core(&dvi0, DMA_IRQ_0);
+      dvi_stop(&dvi0);
+      dvi0.suspendflag = false;  // Ack core 0
+      while (!dvi0.suspendflag); // Wait for restart
+      dvi_register_irqs_this_core(&dvi0, DMA_IRQ_0);
+      dvi_start(&dvi0);
+      dvi0.suspendflag = false;  // Ack core 0
+    }
     uint8_t *b8 = buffer_save;
     if (dbuf)
       b8 += ((WIDTH + 7) / 8) * HEIGHT * (1 - back_index);
@@ -387,6 +396,15 @@ static void mainlooptext1(struct dvi_inst *inst) {
 
 void __not_in_flash_func(DVItext1::_mainloop)(void) {
   for (;;) {
+    if (dvi0.suspendflag) {
+      dvi_unregister_irqs_this_core(&dvi0, DMA_IRQ_0);
+      dvi_stop(&dvi0);
+      dvi0.suspendflag = false;  // Ack core 0
+      while (!dvi0.suspendflag); // Wait for restart
+      dvi_register_irqs_this_core(&dvi0, DMA_IRQ_0);
+      dvi_start(&dvi0);
+      dvi0.suspendflag = false;  // Ack core 0
+    }
     for (uint16_t y = 0; y < HEIGHT; y++) {
       uint16_t *row = getBuffer() + y * WIDTH;
       for (uint8_t y1 = 0; y1 < 8; y1++) {
@@ -432,6 +450,15 @@ bool DVItext1::begin(void) {
 
 // Suspend/resume code from mlorenzatiglb on github.
 
+void PicoDVI::_toggle(void) {
+  // DVI start/stop must occur on core 1. Signal DVI main loop to toggle
+  // its state (suspend or resume), block until acknowledged.
+pinMode(LED_BUILTIN, OUTPUT);
+digitalWrite(LED_BUILTIN, HIGH);
+  for (dviptr->dvi0.suspendflag = true; dviptr->dvi0.suspendflag; );
+digitalWrite(LED_BUILTIN, LOW);
+}
+
 /*!
   @brief  Pause DVI output. This ability is required for code that writes
           to flash memory (such as Adafruit_CPFS). It's declared outside
@@ -440,12 +467,7 @@ bool DVItext1::begin(void) {
           libraries need not be interdependent, but can still work together.
 */
 void PicoDVI_suspend(void) {
-  if (dviptr) {
-// TO DO: start/stop need to occur on core 1. Probably some volatile state
-// flag will be used to signal to loop1() that this should be called there.
-// (This will also require changes in the various DVI mainloop funcs)
-    // dvi_stop(dviptr);
-  }
+  if (dviptr) dviptr->_toggle();
 }
 
 /*!
@@ -454,10 +476,5 @@ void PicoDVI_suspend(void) {
           linking with the PicoDVI library.
 */
 void PicoDVI_resume(void) {
-  if (dviptr) {
-// TO DO: start/stop need to occur on core 1. Probably some volatile state
-// flag will be used to signal to loop1() that this should be called there.
-// (This will also require changes in the various DVI mainloop funcs)
-    // dvi_start(dviptr);
-  }
+  if (dviptr) dviptr->_toggle();
 }

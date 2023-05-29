@@ -47,6 +47,7 @@ struct dvi_inst {
 	queue_t q_colour_free;
 
 	bool started;
+	volatile bool suspendflag;
 };
 
 #if defined(__cplusplus)

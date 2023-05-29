@@ -23,6 +23,7 @@ static void dvi_dma0_irq();
 static void dvi_dma1_irq();
 
 void dvi_init(struct dvi_inst *inst, uint spinlock_tmds_queue, uint spinlock_colour_queue) {
+	inst->started = inst->suspendflag = false;
 	dvi_timing_state_init(&inst->timing_state);
 	dvi_serialiser_init(&inst->ser_cfg);
 	for (int i = 0; i < N_TMDS_LANES; ++i) {
@@ -82,6 +83,23 @@ void dvi_register_irqs_this_core(struct dvi_inst *inst, uint irq_num) {
 	irq_set_enabled(irq_num, true);
 }
 
+void dvi_unregister_irqs_this_core(struct dvi_inst *inst, uint irq_num) {
+	irq_set_enabled(irq_num, false);
+	if (irq_num == DMA_IRQ_0) {
+		irq_remove_handler(DMA_IRQ_0, dvi_dma0_irq);
+	} else {
+		irq_remove_handler(DMA_IRQ_1, dvi_dma1_irq);
+	}
+	if (inst->tmds_buf_release) {
+		queue_try_add_u32(&inst->q_tmds_free, &inst->tmds_buf_release);
+	}
+	if (inst->tmds_buf_release_next) {
+		queue_try_add_u32(&inst->q_tmds_free, &inst->tmds_buf_release_next);
+	}
+	inst->tmds_buf_release = NULL;
+	inst->tmds_buf_release_next = NULL;
+}
+
 // Set up control channels to make transfers to data channels' control
 // registers (but don't trigger the control channels -- this is done either by
 // data channel CHAIN_TO or an initial write to MULTI_CHAN_TRIGGER)
@@ -107,6 +125,7 @@ static inline void __attribute__((always_inline)) _dvi_load_dma_op(const struct 
 // CHAIN_TO on data channel completion. IRQ handler *must* be prepared before
 // calling this. (Hooked to DMA IRQ0)
 void dvi_start(struct dvi_inst *inst) {
+	if (inst->started) return;
 	_dvi_load_dma_op(inst->dma_cfg, &inst->dma_list_vblank_nosync);
 	dma_start_channel_mask(
 		(1u << inst->dma_cfg[0].chan_ctrl) |
@@ -119,10 +138,31 @@ void dvi_start(struct dvi_inst *inst) {
 		while (!pio_sm_is_tx_fifo_full(inst->ser_cfg.pio, inst->ser_cfg.sm_tmds[i]))
 			tight_loop_contents();
 	dvi_serialiser_enable(&inst->ser_cfg, true);
+	inst->started = true;
+}
+
+void dvi_stop(struct dvi_inst *inst) {
+	if (!inst->started) return;
+	uint mask  = 0;
+	for (int i = 0; i < N_TMDS_LANES; ++i) {
+		dma_channel_config cfg = dma_channel_get_default_config(inst->dma_cfg[i].chan_ctrl);
+		dma_channel_set_config(inst->dma_cfg[i].chan_ctrl, &cfg, false);
+		cfg = dma_channel_get_default_config(inst->dma_cfg[i].chan_data);
+		dma_channel_set_config(inst->dma_cfg[i].chan_data, &cfg, false);
+		mask |= 1 << inst->dma_cfg[i].chan_data;
+		mask |= 1 << inst->dma_cfg[i].chan_ctrl;
+	}
+
+	dma_channel_abort(mask);
+	dma_irqn_acknowledge_channel(0, inst->dma_cfg[TMDS_SYNC_LANE].chan_data);
+	dma_hw->ints0 = 1u << inst->dma_cfg[TMDS_SYNC_LANE].chan_data;
+
+	dvi_serialiser_enable(&inst->ser_cfg, false);
+	inst->started = false;
 }
 
 static inline void __dvi_func_x(_dvi_prepare_scanline_8bpp)(struct dvi_inst *inst, uint32_t *scanbuf) {
-	uint32_t *tmdsbuf;
+	uint32_t *tmdsbuf = NULL;
 	queue_remove_blocking_u32(&inst->q_tmds_free, &tmdsbuf);
 	uint pixwidth = inst->timing->h_active_pixels;
 	uint words_per_channel = pixwidth / DVI_SYMBOLS_PER_WORD;
@@ -134,7 +174,7 @@ static inline void __dvi_func_x(_dvi_prepare_scanline_8bpp)(struct dvi_inst *ins
 }
 
 static inline void __dvi_func_x(_dvi_prepare_scanline_16bpp)(struct dvi_inst *inst, uint32_t *scanbuf) {
-	uint32_t *tmdsbuf;
+	uint32_t *tmdsbuf = NULL;
 	queue_remove_blocking_u32(&inst->q_tmds_free, &tmdsbuf);
 	uint pixwidth = inst->timing->h_active_pixels;
 	uint words_per_channel = pixwidth / DVI_SYMBOLS_PER_WORD;
@@ -150,7 +190,17 @@ static inline void __dvi_func_x(_dvi_prepare_scanline_16bpp)(struct dvi_inst *in
 void __dvi_func(dvi_scanbuf_main_8bpp)(struct dvi_inst *inst) {
 	uint y = 0;
 	while (1) {
-		uint32_t *scanbuf;
+		if (inst->suspendflag) {
+			dvi_unregister_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_stop(inst);
+			inst->suspendflag = false;  // Ack core 0
+			while (!inst->suspendflag); // Wait for restart
+			y = 0;
+			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_start(inst);
+			inst->suspendflag = false;  // Ack core 0
+		}
+		uint32_t *scanbuf = NULL;
 		queue_remove_blocking_u32(&inst->q_colour_valid, &scanbuf);
 		_dvi_prepare_scanline_8bpp(inst, scanbuf);
 		queue_add_blocking_u32(&inst->q_colour_free, &scanbuf);
@@ -166,7 +216,17 @@ void __dvi_func(dvi_scanbuf_main_8bpp)(struct dvi_inst *inst) {
 void __dvi_func(dvi_scanbuf_main_16bpp)(struct dvi_inst *inst) {
 	uint y = 0;
 	while (1) {
-		uint32_t *scanbuf;
+		if (inst->suspendflag) {
+			dvi_unregister_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_stop(inst);
+			inst->suspendflag = false;  // Ack core 0
+			while (!inst->suspendflag); // Wait for restart
+			y = 0;
+			dvi_register_irqs_this_core(inst, DMA_IRQ_0);
+			dvi_start(inst);
+			inst->suspendflag = false;  // Ack core 0
+		}
+		uint32_t *scanbuf = NULL;
 		queue_remove_blocking_u32(&inst->q_colour_valid, &scanbuf);
 		_dvi_prepare_scanline_16bpp(inst, scanbuf);
 		queue_add_blocking_u32(&inst->q_colour_free, &scanbuf);
@@ -195,7 +255,7 @@ static void __dvi_func(dvi_dma_irq_handler)(struct dvi_inst *inst) {
 			tight_loop_contents();
 	}
 
-	uint32_t *tmdsbuf;
+	uint32_t *tmdsbuf = NULL;
 	while (inst->late_scanline_ctr > 0 && queue_try_remove_u32(&inst->q_tmds_valid, &tmdsbuf)) {
 		// If we displayed this buffer then it would be in the wrong vertical
 		// position on-screen. Just pass it back.
