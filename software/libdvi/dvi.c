@@ -128,6 +128,10 @@ static inline void __attribute__((always_inline)) _dvi_load_dma_op(const struct 
 // calling this. (Hooked to DMA IRQ0)
 void dvi_start(struct dvi_inst *inst) {
 	if (inst->started) return;
+	// Purge any FIFO cruft that dvi_stop() may have left
+	for (int i = 0; i < N_TMDS_LANES; ++i) {
+		pio_sm_clear_fifos(inst->ser_cfg.pio, inst->ser_cfg.sm_tmds[i]);
+	}
 	_dvi_load_dma_op(inst->dma_cfg, &inst->dma_list_vblank_nosync);
 	dma_start_channel_mask(
 		(1u << inst->dma_cfg[0].chan_ctrl) |
@@ -136,9 +140,10 @@ void dvi_start(struct dvi_inst *inst) {
 
 	// We really don't want the FIFOs to bottom out, so wait for full before
 	// starting the shift-out.
-	for (int i = 0; i < N_TMDS_LANES; ++i)
+	for (int i = 0; i < N_TMDS_LANES; ++i) {
 		while (!pio_sm_is_tx_fifo_full(inst->ser_cfg.pio, inst->ser_cfg.sm_tmds[i]))
 			tight_loop_contents();
+	}
 	dvi_serialiser_enable(&inst->ser_cfg, true);
 	inst->started = true;
 }
