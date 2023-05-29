@@ -341,3 +341,6 @@ public:
 
 protected:
 };
+
+void PicoDVI_suspend(void);
+void PicoDVI_resume(void);

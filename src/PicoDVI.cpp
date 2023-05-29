@@ -429,3 +429,35 @@ bool DVItext1::begin(void) {
   }
   return false;
 }
+
+// Suspend/resume code from mlorenzatiglb on github.
+
+/*!
+  @brief  Pause DVI output. This ability is required for code that writes
+          to flash memory (such as Adafruit_CPFS). It's declared outside
+          the PicoDVI class so that other code can declare a 'weak' version
+          that's referenced if not linking with the PicoDVI library; the
+          libraries need not be interdependent, but can still work together.
+*/
+void PicoDVI_suspend(void) {
+  if (dviptr) {
+// TO DO: start/stop need to occur on core 1. Probably some volatile state
+// flag will be used to signal to loop1() that this should be called there.
+// (This will also require changes in the various DVI mainloop funcs)
+    // dvi_stop(dviptr);
+  }
+}
+
+/*!
+  @brief  Resume previously-paused DVI output. Declared outside the PicoDVI
+          class so that other code can declare a 'weak' version if not
+          linking with the PicoDVI library.
+*/
+void PicoDVI_resume(void) {
+  if (dviptr) {
+// TO DO: start/stop need to occur on core 1. Probably some volatile state
+// flag will be used to signal to loop1() that this should be called there.
+// (This will also require changes in the various DVI mainloop funcs)
+    // dvi_start(dviptr);
+  }
+}
