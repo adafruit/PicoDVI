@@ -448,7 +448,10 @@ bool DVItext1::begin(void) {
   return false;
 }
 
-// Suspend/resume code from mlorenzatiglb on github.
+// Start/stop code from mlorenzatiglb on github:
+// https://github.com/mlorenzati/PicoDVI
+// This part just sets flags to communicate between cores;
+// the actual suspend/resume takes place over in libdvi.
 
 void PicoDVI::_toggle(void) {
   // DVI start/stop must occur on core 1. Signal DVI main loop to toggle

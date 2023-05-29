@@ -83,6 +83,8 @@ void dvi_register_irqs_this_core(struct dvi_inst *inst, uint irq_num) {
 	irq_set_enabled(irq_num, true);
 }
 
+// Start/stop code from mlorenzatiglb on github:
+// https://github.com/mlorenzati/PicoDVI
 void dvi_unregister_irqs_this_core(struct dvi_inst *inst, uint irq_num) {
 	irq_set_enabled(irq_num, false);
 	if (irq_num == DMA_IRQ_0) {
@@ -141,6 +143,8 @@ void dvi_start(struct dvi_inst *inst) {
 	inst->started = true;
 }
 
+// Start/stop code from mlorenzatiglb on github:
+// https://github.com/mlorenzati/PicoDVI
 void dvi_stop(struct dvi_inst *inst) {
 	if (!inst->started) return;
 	uint mask  = 0;
