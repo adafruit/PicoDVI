@@ -39,18 +39,36 @@ static PicoDVI *dviptr = NULL; // For C access to active C++ object
   @brief  Runs on core 1 on startup; this is how Philhower RP2040 handles
           multiprocessing.
 */
-void setup1(void) {
+void __not_in_flash_func(setup1)(void) {
   while (dviptr == NULL) // Wait for PicoDVI::begin() to start on core 0
     yield();
   dviptr->_setup();
 }
 
 // Runs on core 1 after dviptr set
-void PicoDVI::_setup(void) {
+void __not_in_flash_func(PicoDVI::_setup)(void) {
   while (wait_begin)
     ; // Wait for DVIGFX*::begin() to set this
+
   dvi_register_irqs_this_core(&dvi0, DMA_IRQ_0);
   dvi_start(&dvi0);
+
+#if 0
+  // From CircuitPython source. Turns off flash access for core 1; any
+  // access will hard fault from here forward, but is better than messing
+  // up the CIRCUITPY filesystem.
+  MPU->CTRL = MPU_CTRL_PRIVDEFENA_Msk | MPU_CTRL_ENABLE_Msk;
+  MPU->RNR  = 6; // 7 is used by pico-sdk stack protection.
+  MPU->RBAR = XIP_MAIN_BASE | MPU_RBAR_VALID_Msk;
+  MPU->RASR = MPU_RASR_XN_Msk     |        // Execute never + restrict all else
+              MPU_RASR_ENABLE_Msk |
+              (0x1b << MPU_RASR_SIZE_Pos); // Mask up to SRAM region.
+  MPU->RNR = 7;
+  // Doesn't actually work yet though. Keeping this chunk of code around for
+  // notes, as getting all the vital functions in RAM may provide a simpler
+  // solution than the suspend/resume code as currently written.
+#endif
+
   (*mainloop)(&dvi0);
 }
 
