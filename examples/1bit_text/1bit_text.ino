@@ -27,9 +27,22 @@ void setup() { // Runs once on startup
     pinMode(LED_BUILTIN, OUTPUT);
     for (;;) digitalWrite(LED_BUILTIN, (millis() / 500) & 1);
   }
+  display.println("Type characters on serial to echo them!");
 }
 
+bool typewriter = false;
 void loop() {
-  display.print("Hello World!  ");
-  delay(50);
+  if (typewriter) {
+    while(Serial.available()) {
+      display.write(Serial.read());
+    }
+  } else {
+    if (Serial.available()) {
+        typewriter = true;
+      display.println("Entering typewriter mode.");
+    } else {
+      display.print("Hello World!  ");
+      delay(50);
+    }
+  }
 }

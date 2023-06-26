@@ -328,6 +328,92 @@ void DVIGFX1::swap(bool copy_framebuffer) {
 #define FONT_FIRST_ASCII 0 ///< Full CP437 is there, start at 0
 #include "font_8x8.h"
 
+#define DEFPARAM(i, d) (esc_param[(i)] ?: (d))
+
+DVItext1::vt_action DVItext1::csi_common(int c, int i) {
+  if (c >= '0' && c <= '9') {
+    esc_param[i] = esc_param[i] * 10 + c - '0';
+    return DVItext1::vt_action::NO_OUTPUT;
+  }
+  esc_st = NORMAL;
+  if (c == 'K') {
+    return DVItext1::vt_action::CLEAR_EOL;
+  } else if (c == 'J') {
+    if (esc_param[0] == 2) {
+      return DVItext1::vt_action::CLEAR_SCREEN;
+    }
+  } else if (c == 'D') {
+    return DVItext1::vt_action::CURSOR_LEFT;
+  } else if (c == 'H') {
+    return DVItext1::vt_action::CURSOR_POSITION;
+  } else if (c == 'm') {
+    return DVItext1::vt_action::CHAR_ATTR;
+  }
+  return DVItext1::vt_action::NO_OUTPUT;
+}
+
+DVItext1::vt_action DVItext1::handle_escape_code(int c) {
+  switch (esc_st) {
+  default:
+  case NORMAL:
+    if (c == 27) {
+      esc_st = ESC;
+      return DVItext1::vt_action::NO_OUTPUT;
+    }
+    if (c == 7) {
+      // bell
+      return DVItext1::vt_action::BELL;
+    }
+    if (c == 8) {
+      esc_param[0] = 1;
+      return DVItext1::vt_action::CURSOR_LEFT;
+    }
+    return DVItext1::vt_action::PRINTABLE;
+
+  case ESC:
+    if (c == '[') {
+      esc_st = CSI;
+      esc_param[0] = esc_param[1] = 0;
+    } else if (c == ']') {
+      esc_st = TITLE_PRE;
+    } else {
+      esc_st = NORMAL;
+    }
+    return DVItext1::vt_action::NO_OUTPUT;
+
+  case CSI:
+    if (c == ';') {
+      esc_st = P2;
+      return DVItext1::vt_action::NO_OUTPUT;
+    } else {
+      return csi_common(c, 0);
+    }
+
+  case P2:
+    return csi_common(c, 1);
+
+  case TITLE_PRE:
+    if (c == ';') {
+      esc_st = TITLE;
+      return DVItext1::vt_action::NO_OUTPUT;
+    }
+
+  case TITLE:
+    if (c == 0x1b) {
+      esc_st = TITLE_END;
+    }
+    return DVItext1::vt_action::NO_OUTPUT;
+
+  case TITLE_END:
+    if (c == 0x5c) {
+      esc_st = NORMAL;
+    } else {
+      esc_st = TITLE;
+    }
+    return DVItext1::vt_action::NO_OUTPUT;
+  }
+}
+
 DVItext1::DVItext1(const DVIresolution r, const struct dvi_serialiser_cfg &c,
                    vreg_voltage v)
     : PicoDVI(dvispec[r].timing, c, v),
@@ -340,21 +426,76 @@ DVItext1::~DVItext1(void) { gfxptr = NULL; }
 
 // Character framebuffer is actually a small GFXcanvas16, so...
 size_t DVItext1::write(uint8_t c) {
-  if (c == '\r') { // Carriage return
-    cursor_x = 0;
-  } else if ((c == '\n') || (cursor_x >= WIDTH)) { // Newline OR right edge
-    cursor_x = 0;
-    if (cursor_y >= (HEIGHT - 1)) { // Vert scroll?
-      memmove(getBuffer(), getBuffer() + WIDTH, WIDTH * (HEIGHT - 1) * 2);
-      drawFastHLine(0, HEIGHT - 1, WIDTH, ' '); // Clear bottom line
-      cursor_y = HEIGHT - 1;
-    } else {
-      cursor_y++;
-    }
+  auto st = esc_st;
+
+  auto action = handle_escape_code(c);
+
+#if defined(DEBUG_ESCAPE_CODES)
+  if (st != esc_st) {
+    Serial.printf("st %d -> %d [c=%d]\r\n", st, esc_st, c);
   }
-  if ((c != '\r') && (c != '\n')) {
-    drawPixel(cursor_x, cursor_y, c);
-    cursor_x++;
+
+  if (action != DVItext1::vt_action::PRINTABLE &&
+      action != DVItext1::vt_action::NO_OUTPUT) {
+    Serial.printf("action %d param0 %d param1 %d\r\n", action, esc_param[0],
+                  esc_param[1]);
+  }
+#endif
+
+  switch (action) {
+  case DVItext1::vt_action::PRINTABLE:
+    if (c == '\r') { // Carriage return
+      cursor_x = 0;
+    } else if ((c == '\n') || (cursor_x >= WIDTH)) { // Newline OR right edge
+      cursor_x = 0;
+      if (cursor_y >= (HEIGHT - 1)) { // Vert scroll?
+        memmove(getBuffer(), getBuffer() + WIDTH, WIDTH * (HEIGHT - 1) * 2);
+        drawFastHLine(0, HEIGHT - 1, WIDTH, ' '); // Clear bottom line
+        cursor_y = HEIGHT - 1;
+      } else {
+        cursor_y++;
+      }
+    }
+    if ((c != '\r') && (c != '\n')) {
+      drawPixel(cursor_x, cursor_y, c | attr);
+      cursor_x++;
+    }
+    break;
+
+  case DVItext1::vt_action::BELL: {
+    auto b = reinterpret_cast<uint32_t *>(getBuffer());
+    for (size_t i = 0; i < WIDTH * HEIGHT / 2; i++)
+      b[i] ^= 0xff00ff00;
+    delay(100);
+    for (size_t i = 0; i < WIDTH * HEIGHT / 2; i++)
+      b[i] ^= 0xff00ff00;
+    break;
+  }
+
+  case DVItext1::vt_action::NO_OUTPUT:
+    break;
+
+  case DVItext1::vt_action::CLEAR_EOL:
+    if (cursor_x < WIDTH) {
+      drawFastHLine(cursor_x, cursor_y, WIDTH - cursor_x, ' ');
+    }
+    break;
+
+  case DVItext1::vt_action::CLEAR_SCREEN:
+    // does NOT reset cursor position!
+    memset(getBuffer(), 0, WIDTH * HEIGHT * 2);
+    break;
+
+  case DVItext1::vt_action::CURSOR_LEFT:
+    cursor_x = std::max(0, cursor_x - DEFPARAM(0, 1));
+    break;
+
+  case DVItext1::vt_action::CURSOR_POSITION:
+    cursor_x = std::max(0, min(WIDTH - 1, DEFPARAM(1, 1) - 1));
+    cursor_y = std::max(0, min(HEIGHT - 1, DEFPARAM(0, 1) - 1));
+
+  case DVItext1::vt_action::CHAR_ATTR:
+    attr = esc_param[0] ? 0xff00 : 0;
   }
   return 1;
 }

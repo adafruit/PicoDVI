@@ -342,5 +342,23 @@ public:
   */
   void _mainloop(void);
 
+  enum vt_action {
+    PRINTABLE,
+    NO_OUTPUT,
+    BELL,
+    CLEAR_EOL,
+    CLEAR_SCREEN,
+    CURSOR_LEFT,
+    CURSOR_POSITION,
+    CHAR_ATTR
+  };
+
+  enum { NORMAL, ESC, CSI, P2, TITLE_PRE, TITLE, TITLE_END } esc_st;
+  int esc_param[2];
+
+  int16_t attr;
+
 protected:
+  vt_action handle_escape_code(int c);
+  vt_action csi_common(int c, int i);
 };
